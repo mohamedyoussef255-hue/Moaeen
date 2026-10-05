@@ -283,9 +283,6 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
     setIsPlayingAudio(false);
   };
 
@@ -303,54 +300,48 @@ export const VoiceController: React.FC<VoiceControllerProps> = ({
 
       const data = await res.json();
       if (data.audioData) {
-        const audioBlob = base64ToBlob(data.audioData, 'audio/wav');
-        const audioUrl = URL.createObjectURL(audioBlob);
+        const mime = data.mimeType || (data.provider === 'edge_tts' ? 'audio/mp3' : 'audio/wav');
+        const audioBlob = base64ToBlob(data.audioData, mime);
+        if (audioBlob instanceof Blob) {
+          const audioUrl = URL.createObjectURL(audioBlob);
 
-        if (!audioRef.current) {
-          audioRef.current = new Audio();
+          if (!audioRef.current) {
+            audioRef.current = new Audio();
+          }
+          audioRef.current.src = audioUrl;
+          audioRef.current.onended = () => {
+            setIsPlayingAudio(false);
+          };
+          audioRef.current.onerror = () => {
+            setIsPlayingAudio(false);
+          };
+
+          setIsPlayingAudio(true);
+          await audioRef.current.play();
         }
-        audioRef.current.src = audioUrl;
-        audioRef.current.onended = () => {
-          setIsPlayingAudio(false);
-        };
-        audioRef.current.onerror = () => {
-          setIsPlayingAudio(false);
-          fallbackWebSpeech(text);
-        };
-
-        setIsPlayingAudio(true);
-        await audioRef.current.play();
-      } else {
-        fallbackWebSpeech(text);
       }
     } catch (err) {
-      console.warn('Gemini TTS failed, falling back to Web Speech:', err);
-      fallbackWebSpeech(text);
+      console.warn('Gemini TTS notice:', err);
     } finally {
       setIsAudioLoading(false);
     }
   };
 
-  const fallbackWebSpeech = (text: string) => {
-    if ('speechSynthesis' in window) {
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'ar-EG';
-      utterance.rate = 1.05;
-      utterance.onend = () => setIsPlayingAudio(false);
-      utterance.onerror = () => setIsPlayingAudio(false);
-      setIsPlayingAudio(true);
-      window.speechSynthesis.speak(utterance);
+  const base64ToBlob = (base64: string, mimeType: string): Blob | null => {
+    try {
+      if (!base64 || typeof base64 !== 'string') return null;
+      const cleanBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
+      const byteCharacters = atob(cleanBase64.trim());
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      return new Blob([byteArray], { type: mimeType });
+    } catch (e) {
+      console.warn('base64ToBlob error:', e);
+      return null;
     }
-  };
-
-  const base64ToBlob = (base64: string, mimeType: string) => {
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    return new Blob([byteArray], { type: mimeType });
   };
 
   return (

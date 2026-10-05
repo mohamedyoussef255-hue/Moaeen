@@ -3,6 +3,7 @@ import { PersonaMode, EzoutiApp, ChatMessage } from './types/assistant';
 import { INITIAL_APPS, EZOUTI_COMPANY_INFO } from './data/ezoutiData';
 import { Header } from './components/Header';
 import { ChatView } from './components/ChatView';
+import { EmbedVoiceWidget } from './components/EmbedVoiceWidget';
 import { AppSimulator } from './components/AppSimulator';
 import { EmbedGuide } from './components/EmbedGuide';
 import { KnowledgeBase } from './components/KnowledgeBase';
@@ -115,10 +116,6 @@ export default function App() {
       if (data.audioData) {
         const audio = new Audio(`data:audio/wav;base64,${data.audioData}`);
         audio.play().catch((err) => console.warn('Audio auto-play prevented:', err));
-      } else if ('speechSynthesis' in window) {
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.lang = 'ar-EG';
-        window.speechSynthesis.speak(utter);
       }
     } catch (e) {
       console.warn('Voice play error:', e);
@@ -158,35 +155,9 @@ export default function App() {
     ]);
   };
 
-  // If viewed as embed iframe inside widget modal
+  // If viewed as embed iframe inside external apps via widget
   if (isEmbedMode) {
-    return (
-      <div className="h-screen w-screen flex flex-col bg-slate-950 text-slate-100 font-['Cairo',sans-serif]">
-        <div className="bg-slate-900 border-b border-slate-800 p-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: selectedApp.color }} />
-            <h2 className="text-xs font-bold text-white">مساعد عزوتي ({selectedApp.name})</h2>
-          </div>
-          <button
-            onClick={() => window.parent.postMessage('ezouti-close-assistant', '*')}
-            className="text-slate-400 hover:text-white p-1 rounded"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-hidden">
-          <ChatView
-            selectedPersona={selectedPersona}
-            selectedApp={selectedApp}
-            voiceMode={voiceMode}
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            isGenerating={isGenerating}
-            onClearHistory={handleClearHistory}
-          />
-        </div>
-      </div>
-    );
+    return <EmbedVoiceWidget app={selectedApp} />;
   }
 
   return (

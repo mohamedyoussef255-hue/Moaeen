@@ -183,6 +183,12 @@ function updateAssistantContext(userRole, currentScreen, actionId) {
               <h3 className="text-base sm:text-lg font-black text-white">
                 انسخ هذا السطر الواحد وضعه في موقعك أو تطبيقك.. وانتهى الأمر!
               </h3>
+              <p className="text-xs text-emerald-300 mt-1 flex items-center gap-1.5 font-medium">
+                <span>🎯</span>
+                <span>
+                  <strong>المظهر في تطبيقك الخارجي:</strong> ستظهر فقط أيقونة صوت عائمة وذكية (Voice Orb) تتحدث وتستمع بالمايكروفون بدون أي تفاصيل إدارية أو لوحات تحكم، مع بقاء كافة وظائف تطبيقك تعمل بكفاءة في الخلفية!
+                </span>
+              </p>
             </div>
           </div>
 

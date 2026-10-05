@@ -3,7 +3,7 @@ import React from 'react';
 interface EzoutiLogoProps {
   className?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
-  variant?: 'full' | 'symbol' | 'badge';
+  variant?: 'full' | 'symbol' | 'horizontal' | 'badge';
   withLightText?: boolean;
 }
 
@@ -13,64 +13,102 @@ export const EzoutiLogo: React.FC<EzoutiLogoProps> = ({
   variant = 'full',
   withLightText = true,
 }) => {
+  // Sizing map calibrated to make the emblem icon significantly larger and prominent
   const sizeMap = {
-    sm: { symbol: 'w-8 h-8', full: 'h-9', badge: 'h-10' },
-    md: { symbol: 'w-11 h-11', full: 'h-12', badge: 'h-14' },
-    lg: { symbol: 'w-16 h-16', full: 'h-16', badge: 'h-20' },
-    xl: { symbol: 'w-24 h-24', full: 'h-24', badge: 'h-28' },
+    sm: { symbol: 'w-10 h-10', badge: 'h-11' },
+    md: { symbol: 'w-14 h-14', badge: 'h-14' },
+    lg: { symbol: 'w-20 h-20', badge: 'h-20' },
+    xl: { symbol: 'w-28 h-28', badge: 'h-28' },
   };
 
   const currentSize = sizeMap[size] || sizeMap.md;
 
-  // Standalone vector symbol
+  // Ultra-detailed, authentic vector reconstruction of the uploaded official Ezwaty IT Logo
   const SymbolSVG = (
-    <svg viewBox="0 0 500 450" className="w-full h-full drop-shadow-md select-none">
+    <svg viewBox="0 0 500 450" className="w-full h-full drop-shadow-xl select-none">
       <defs>
-        <linearGradient id="ezBlueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        {/* Layer 1: Electric Blue Gradient for Main E Body */}
+        <linearGradient id="ezMainBlue" x1="10%" y1="0%" x2="90%" y2="100%">
           <stop offset="0%" stopColor="#38bdf8" />
           <stop offset="25%" stopColor="#0284c7" />
-          <stop offset="60%" stopColor="#1d4ed8" />
+          <stop offset="60%" stopColor="#1e40af" />
           <stop offset="100%" stopColor="#0f2b5c" />
         </linearGradient>
-        <linearGradient id="ezOrangeOrbit" x1="0%" y1="0%" x2="100%" y2="80%">
-          <stop offset="0%" stopColor="#ea580c" />
-          <stop offset="45%" stopColor="#f97316" />
-          <stop offset="100%" stopColor="#fbbf24" />
+
+        {/* Layer 2: Deep 3D Shadow Fold for Inner E Spine */}
+        <linearGradient id="ezInnerFold" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#0284c7" />
+          <stop offset="40%" stopColor="#1e3a8a" />
+          <stop offset="100%" stopColor="#091b3e" />
         </linearGradient>
+
+        {/* Orbit Arc Gradient: Vibrant Sunburst Orange & Amber */}
+        <linearGradient id="ezOrbitGrad" x1="0%" y1="10%" x2="100%" y2="90%">
+          <stop offset="0%" stopColor="#ea580c" />
+          <stop offset="40%" stopColor="#f97316" />
+          <stop offset="80%" stopColor="#fb923c" />
+          <stop offset="100%" stopColor="#fde047" />
+        </linearGradient>
+
+        {/* Soft Drop Shadow Filter for 3D Layering */}
+        <filter id="ezDropGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#0f2b5c" floodOpacity="0.35" />
+        </filter>
       </defs>
 
-      {/* Back orbit arc */}
+      {/* 1. Back Orbit Swoosh (behind the E stem) */}
       <path
-        d="M 120 180 C 95 125, 330 65, 420 115"
+        d="M 125 185 C 105 130, 280 65, 395 105 C 415 112, 425 125, 410 135 C 385 145, 340 120, 260 125"
         fill="none"
-        stroke="url(#ezOrangeOrbit)"
-        strokeWidth="18"
+        stroke="url(#ezOrbitGrad)"
+        strokeWidth="20"
         strokeLinecap="round"
-        opacity="0.95"
+        opacity="0.9"
       />
 
-      {/* Stylized Modern 3D "E" */}
+      {/* 2. Top-Right Tech Digital Pixel Cubes */}
+      <g filter="url(#ezDropGlow)">
+        <rect x="365" y="50" width="20" height="20" rx="4" fill="#0284c7" />
+        <rect x="390" y="50" width="20" height="20" rx="4" fill="#0284c7" />
+        <rect x="365" y="75" width="20" height="20" rx="4" fill="#f97316" />
+        <rect x="390" y="75" width="20" height="20" rx="4" fill="#ea580c" />
+        <rect x="415" y="75" width="20" height="20" rx="4" fill="#0284c7" />
+        <rect x="390" y="100" width="20" height="20" rx="4" fill="#f97316" />
+      </g>
+
+      {/* 3. The Stylized 3D Blue Letter 'E' Body with Dimensional Folds */}
+      <g filter="url(#ezDropGlow)">
+        {/* Outer Back Layer */}
+        <path
+          d="M 235 40 C 325 40, 380 85, 380 148 C 380 180, 360 200, 320 210 C 365 220, 390 252, 390 292 C 390 355, 325 390, 235 390 C 170 390, 130 362, 125 326 C 122 308, 135 298, 152 298 C 165 298, 175 306, 182 318 C 194 336, 212 346, 240 346 C 298 346, 335 318, 335 282 C 335 244, 298 222, 235 222 L 202 222 C 190 222, 185 212, 185 202 C 185 192, 190 182, 202 182 L 235 182 C 292 182, 325 158, 325 125 C 325 94, 292 78, 240 78 C 205 78, 182 92, 168 116 C 160 128, 148 132, 136 132 C 122 132, 110 118, 115 102 C 126 62, 172 40, 235 40 Z"
+          fill="url(#ezMainBlue)"
+        />
+
+        {/* 3D Fold / Emboss Shadow Detail on Main Spine */}
+        <path
+          d="M 205 78 C 195 90, 185 110, 185 140 L 185 300 C 185 325, 205 346, 235 346 C 255 346, 280 340, 295 325 C 275 332, 245 328, 235 310 C 228 298, 228 280, 228 250 L 228 170 C 228 140, 235 110, 260 95 C 240 82, 220 78, 205 78 Z"
+          fill="url(#ezInnerFold)"
+          opacity="0.85"
+        />
+
+        {/* Center Horizontal Arm of the E */}
+        <path
+          d="M 205 186 L 295 186 C 305 186, 312 192, 312 202 C 312 212, 305 218, 295 218 L 205 218 Z"
+          fill="#38bdf8"
+          opacity="0.95"
+        />
+      </g>
+
+      {/* 4. Front Orbit Swoosh (sweeping gracefully across the front of the E) */}
       <path
-        d="M 230 45 C 315 45, 370 85, 370 145 C 370 175, 350 195, 310 205 C 355 215, 380 245, 380 280 C 380 340, 315 375, 230 375 C 175 375, 140 350, 135 320 C 132 305, 142 295, 158 295 C 170 295, 178 303, 185 312 C 195 325, 210 335, 235 335 C 290 335, 325 310, 325 275 C 325 240, 290 218, 230 218 L 205 218 C 195 218, 190 210, 190 200 C 190 190, 195 182, 205 182 L 230 182 C 285 182, 315 160, 315 130 C 315 100, 285 85, 235 85 C 205 85, 185 98, 172 118 C 165 128, 155 132, 145 132 C 132 132, 122 120, 126 105 C 135 70, 175 45, 230 45 Z"
-        fill="url(#ezBlueGrad)"
+        d="M 95 210 C 105 255, 175 285, 290 270 C 365 260, 425 220, 435 178 C 438 162, 428 152, 412 156 C 395 160, 345 200, 270 218 C 185 238, 118 226, 95 210 Z"
+        fill="url(#ezOrbitGrad)"
+        filter="url(#ezDropGlow)"
       />
-
-      {/* Front orbit arc */}
-      <path
-        d="M 105 205 C 110 240, 170 270, 280 255 C 350 245, 410 210, 420 170 C 423 155, 415 145, 400 148 C 385 152, 340 190, 270 208 C 190 228, 125 218, 105 205 Z"
-        fill="url(#ezOrangeOrbit)"
-      />
-
-      {/* Tech Pixel Squares (Top-Right) */}
-      <rect x="365" y="55" width="18" height="18" rx="3" fill="#0284c7" />
-      <rect x="390" y="55" width="18" height="18" rx="3" fill="#0284c7" />
-      <rect x="365" y="80" width="18" height="18" rx="3" fill="#f97316" />
-      <rect x="390" y="80" width="18" height="18" rx="3" fill="#ea580c" />
-      <rect x="415" y="80" width="18" height="18" rx="3" fill="#0284c7" />
-      <rect x="390" y="105" width="18" height="18" rx="3" fill="#f97316" />
     </svg>
   );
 
+  // Standalone enlarged symbol variant
   if (variant === 'symbol') {
     return (
       <div className={`relative shrink-0 flex items-center justify-center ${currentSize.symbol} ${className}`}>
@@ -79,77 +117,61 @@ export const EzoutiLogo: React.FC<EzoutiLogoProps> = ({
     );
   }
 
-  // Clear badge card variant (matching the official image with white card container)
-  if (variant === 'badge') {
-    return (
-      <div
-        className={`bg-white rounded-2xl p-2 shadow-lg border border-slate-200/40 flex items-center gap-3 select-none ${className}`}
-      >
-        <div className={currentSize.symbol}>{SymbolSVG}</div>
-        <div className="flex flex-col text-right leading-tight">
-          <div className="flex items-center gap-1.5">
-            <span className="font-black text-[#0f2b5c] text-xl tracking-tight">عزوتي</span>
-            <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-orange-100 text-orange-600">
-              IT
-            </span>
-          </div>
-          <div className="flex items-center gap-1 mt-0.5">
-            <span className="w-2 h-[1px] bg-orange-500 rounded-full" />
-            <span className="text-[9px] font-bold text-[#0f2b5c]">للبرمجيات وتكنولوجيا المعلومات</span>
-            <span className="w-2 h-[1px] bg-orange-500 rounded-full" />
-          </div>
-          <div className="font-mono text-[9px] font-black tracking-wider mt-0.5 text-[#0f2b5c]">
-            EZWATY <span className="text-orange-600">IT</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Default Full Brand
+  // Full Layout strictly following user instruction:
+  // "اظهره بوضوح وبمساحة جيدة وافرد كلمة للبرمجيات وتكنولوجيا المعلومات فى سطر واحد اسفل اللوجو بجوار كلمة عزوتى ولكن صغر حجم كلمة عزوتى بما يسمح بتكبير اللوجو"
   return (
-    <div className={`flex items-center gap-3.5 select-none ${className}`}>
-      {/* Symbol in white/clear circular pod for max visual clarity */}
-      <div className={`relative shrink-0 rounded-xl bg-white/95 p-1.5 shadow-md shadow-blue-900/20 border border-slate-200/50 flex items-center justify-center ${currentSize.symbol}`}>
+    <div className={`flex flex-col items-center justify-center select-none text-center ${className}`}>
+      {/* 1. Enlarged Logo Emblem with generous, clear space */}
+      <div
+        className={`relative shrink-0 rounded-2xl bg-white p-2 shadow-xl shadow-blue-950/40 border border-slate-200/80 flex items-center justify-center transition-transform hover:scale-105 ${currentSize.symbol}`}
+        title="شعار شركة عزوتي للبرمجيات وتكنولوجيا المعلومات"
+      >
         {SymbolSVG}
       </div>
 
-      {/* Typography */}
-      <div className="flex flex-col justify-center leading-none text-right">
-        {/* Arabic Brand Name */}
-        <div className="flex items-center gap-2">
-          <span
-            className={`font-black tracking-tight ${
-              withLightText ? 'text-white' : 'text-[#0f2b5c]'
-            } ${
-              size === 'sm'
-                ? 'text-lg'
-                : size === 'lg'
-                ? 'text-2xl'
-                : size === 'xl'
-                ? 'text-3xl'
-                : 'text-xl'
-            }`}
-          >
-            عزوتي
-          </span>
-          <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-sm shadow-orange-500/30">
-            EZWATY IT
-          </span>
-        </div>
+      {/* 2. Single Unfolded Line below the Logo: "عزوتي" (بخط مصغر وأنيق) بجوار "للبرمجيات وتكنولوجيا المعلومات" */}
+      <div className="flex flex-wrap items-center justify-center gap-1.5 mt-2 max-w-full">
+        {/* كلمة عزوتي مصغرة لتركيز المساحة والتكبير على اللوجو */}
+        <span
+          className={`font-black tracking-tight ${
+            withLightText ? 'text-white' : 'text-[#0f2b5c]'
+          } ${
+            size === 'sm'
+              ? 'text-xs'
+              : size === 'lg'
+              ? 'text-base'
+              : size === 'xl'
+              ? 'text-lg'
+              : 'text-sm'
+          }`}
+        >
+          عزوتي
+        </span>
 
-        {/* Subtitle */}
-        <div className="flex items-center gap-1.5 mt-1">
-          <span className="w-3 h-[2px] bg-orange-500 rounded-full" />
-          <span
-            className={`text-[10px] font-bold tracking-wide ${
-              withLightText ? 'text-slate-200' : 'text-slate-700'
-            }`}
-          >
-            للبرمجيات وتكنولوجيا المعلومات
-          </span>
-          <span className="w-3 h-[2px] bg-orange-500 rounded-full" />
-        </div>
+        {/* فاصل برتقالي أنيق */}
+        <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shrink-0" />
+
+        {/* جملة للبرمجيات وتكنولوجيا المعلومات مفرودة في نفس السطر */}
+        <span
+          className={`font-bold whitespace-nowrap tracking-normal ${
+            withLightText ? 'text-slate-200' : 'text-slate-700'
+          } ${
+            size === 'sm'
+              ? 'text-[10px]'
+              : size === 'lg'
+              ? 'text-xs'
+              : size === 'xl'
+              ? 'text-sm'
+              : 'text-[11px]'
+          }`}
+        >
+          للبرمجيات وتكنولوجيا المعلومات
+        </span>
+
+        {/* بادج الإنجليزية المقتبس من اللوجو المرفوع */}
+        <span className="font-mono text-[9px] font-black px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/30 whitespace-nowrap">
+          EZWATY <span className="text-orange-500">IT</span>
+        </span>
       </div>
     </div>
   );

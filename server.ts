@@ -1,10 +1,14 @@
 import express, { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
+import { Client } from '@gradio/client';
 import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,7 +16,14 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json({ limit: '10mb' }));
+// Multer memory storage for in-app recorded or uploaded reference voice (supports up to 15 min audio)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+});
+
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // Initialize Gemini Client
 const ai = new GoogleGenAI({
@@ -288,10 +299,59 @@ function generateLocalPersonaReply(query: string, appContext: string, persona: s
 // In-memory cache for generated TTS audio to prevent quota exhaustion
 const ttsCache = new Map<string, string>();
 
-// 2. Text to Speech API Endpoint (Gemini 3.8 Flash Lite TTS + Graceful Fallback)
+// Daily Gemini Requests Tracking (10 requests limit as requested by user)
+let geminiTtsRequestsCount = 0;
+const GEMINI_FREE_LIMIT = 10;
+let lastResetDate = new Date().toDateString();
+
+function checkAndResetDailyCounter() {
+  const today = new Date().toDateString();
+  if (today !== lastResetDate) {
+    geminiTtsRequestsCount = 0;
+    lastResetDate = today;
+  }
+}
+
+async function synthesizeWithEdgeTts(
+  text: string,
+  voice: 'ar-EG-ShakirNeural' | 'ar-EG-SalmaNeural' = 'ar-EG-ShakirNeural'
+): Promise<{ audioData: string; mimeType: string }> {
+  const tts = new MsEdgeTTS();
+  await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+  const { audioStream } = tts.toStream(text);
+
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    audioStream.on('data', (chunk: Buffer) => chunks.push(chunk));
+    audioStream.on('end', () => {
+      const buffer = Buffer.concat(chunks);
+      resolve({
+        audioData: buffer.toString('base64'),
+        mimeType: 'audio/mp3',
+      });
+    });
+    audioStream.on('error', (err: any) => {
+      reject(err);
+    });
+  });
+}
+
+// Check Quota Status Endpoint
+app.get('/api/tts/quota', (req: Request, res: Response) => {
+  checkAndResetDailyCounter();
+  res.json({
+    totalLimit: GEMINI_FREE_LIMIT,
+    used: geminiTtsRequestsCount,
+    remaining: Math.max(0, GEMINI_FREE_LIMIT - geminiTtsRequestsCount),
+    resetDate: lastResetDate,
+  });
+});
+
+// 2. Text to Speech API Endpoint (Gemini 10-requests free tier + Microsoft Edge Egyptian Voice)
 app.post('/api/tts', async (req: Request, res: Response) => {
   try {
-    const { text, voice = 'Puck' } = req.body;
+    checkAndResetDailyCounter();
+    const { text, voice = 'Puck', provider = 'auto' } = req.body;
 
     if (!text || typeof text !== 'string') {
       return res.status(400).json({ error: 'text is required for TTS' });
@@ -299,13 +359,13 @@ app.post('/api/tts', async (req: Request, res: Response) => {
 
     // Clean text: strip markdown code blocks and asterisks for smooth Arabic audio
     const sanitizedText = text
-      .replace(/```[\s\S]*?```/g, 'تم إرفاق الكود البرمجي في الشات.')
+      .replace(/```[\s\S]*?```/g, 'تم استعراض الكود في الشات.')
       .replace(/`([^`]+)`/g, '$1')
       .replace(/[*_#~]/g, '')
+      .replace(/https?:\/\/\S+/g, 'الرابط المرفق')
       .trim()
-      .slice(0, 1000); // keep reasonable audio length
+      .slice(0, 1000);
 
-    // Check cache first to save quota
     const cacheKey = `${voice}_${sanitizedText}`;
     if (ttsCache.has(cacheKey)) {
       return res.json({
@@ -313,62 +373,102 @@ app.post('/api/tts', async (req: Request, res: Response) => {
         mimeType: 'audio/wav',
         text: sanitizedText,
         cached: true,
+        remainingRequests: Math.max(0, GEMINI_FREE_LIMIT - geminiTtsRequestsCount),
       });
     }
 
-    const ttsResponse = await ai.models.generateContent({
-      model: 'gemini-3.8-flash-lite-tts',
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            {
-              text: sanitizedText,
-              speechMetadata: {
-                style: 'Friendly, warm, professional, authentic Egyptian Arabic tone',
+    // A) If user specifically requested Edge TTS or if Gemini daily quota (10 requests) is already reached:
+    if (provider === 'edge_tts' || geminiTtsRequestsCount >= GEMINI_FREE_LIMIT) {
+      try {
+        const edgeVoice = voice === 'Salma' ? 'ar-EG-SalmaNeural' : 'ar-EG-ShakirNeural';
+        const edgeAudio = await synthesizeWithEdgeTts(sanitizedText, edgeVoice);
+        return res.json({
+          ...edgeAudio,
+          text: sanitizedText,
+          provider: 'edge_tts',
+          voiceName: edgeVoice,
+          remainingRequests: Math.max(0, GEMINI_FREE_LIMIT - geminiTtsRequestsCount),
+          notice:
+            geminiTtsRequestsCount >= GEMINI_FREE_LIMIT
+              ? 'تم التحويل التلقائي للصوت البشري المصري (مايكروسوفت شاكر) بعد استنفاد الـ 10 طلبات اليومية.'
+              : undefined,
+        });
+      } catch (edgeErr) {
+        console.warn('Edge TTS notice:', edgeErr);
+      }
+    }
+
+    // B) Try Gemini Flash Lite TTS (10 requests daily limit)
+    try {
+      const ttsResponse = await ai.models.generateContent({
+        model: 'gemini-3.8-flash-lite-tts',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: sanitizedText,
+                speechMetadata: {
+                  style: 'Warm, natural, authentic Egyptian Arabic consultant voice, friendly and direct',
+                },
               },
+            ],
+          },
+        ],
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: voice || 'Puck' },
             },
-          ],
-        },
-      ],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: voice || 'Puck' },
           },
         },
-      },
-    });
-
-    const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-
-    if (base64Audio) {
-      if (ttsCache.size > 50) {
-        const firstKey = ttsCache.keys().next().value;
-        if (firstKey) ttsCache.delete(firstKey);
-      }
-      ttsCache.set(cacheKey, base64Audio);
-
-      res.json({
-        audioData: base64Audio,
-        mimeType: 'audio/wav',
-        text: sanitizedText,
       });
-    } else {
-      res.json({
-        fallback: true,
-        message: 'No audio returned, using local speech synthesis',
+
+      const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        geminiTtsRequestsCount++;
+        if (ttsCache.size > 50) {
+          const firstKey = ttsCache.keys().next().value;
+          if (firstKey) ttsCache.delete(firstKey);
+        }
+        ttsCache.set(cacheKey, base64Audio);
+
+        return res.json({
+          audioData: base64Audio,
+          mimeType: 'audio/wav',
+          text: sanitizedText,
+          provider: 'gemini',
+          remainingRequests: Math.max(0, GEMINI_FREE_LIMIT - geminiTtsRequestsCount),
+        });
+      }
+    } catch (geminiErr: any) {
+      console.warn(
+        'Gemini TTS reached quota or rate limit, switching to Microsoft Edge Egyptian voice:',
+        geminiErr?.message || geminiErr
+      );
+    }
+
+    // C) Automatic fallback to Microsoft Edge TTS (Shakir Neural) so it never fails and never uses robot voices!
+    try {
+      const edgeAudio = await synthesizeWithEdgeTts(sanitizedText, 'ar-EG-ShakirNeural');
+      return res.json({
+        ...edgeAudio,
+        text: sanitizedText,
+        provider: 'edge_tts',
+        voiceName: 'ar-EG-ShakirNeural',
+        remainingRequests: Math.max(0, GEMINI_FREE_LIMIT - geminiTtsRequestsCount),
+        notice: 'تم استخدام الصوت البشري المصري (مايكروسوفت شاكر) لضمان الاستماع النقي بدون توقف.',
+      });
+    } catch (edgeFallbackErr: any) {
+      console.error('Edge TTS fallback failed:', edgeFallbackErr);
+      return res.status(500).json({
+        error: 'TTS failed',
+        details: edgeFallbackErr?.message || String(edgeFallbackErr),
       });
     }
   } catch (err: any) {
-    // Graceful fallback for rate limits (429) or transient provider issues
-    console.warn('TTS provider notice (quota or rate-limit), fallback to browser speech synthesis:', err?.message || err);
-    res.json({
-      fallback: true,
-      message: 'Quota or rate-limit reached, using local speech synthesis',
-      errorDetail: err?.message || String(err),
-    });
+    res.status(500).json({ error: 'TTS request error', details: err?.message || String(err) });
   }
 });
 
@@ -402,10 +502,278 @@ app.post('/api/transcribe', async (req: Request, res: Response) => {
     const transcript = response.text?.trim() || '';
     res.json({ transcript });
   } catch (err: any) {
-    console.error('Transcription error:', err);
+    console.warn('Transcription warning:', err?.message || err);
     res.status(500).json({
       error: 'Transcription failed',
       details: err?.message || String(err),
+    });
+  }
+});
+
+// 4. Voice Studio & Analysis Endpoint (Extract vocal DNA & Audio-to-Text)
+app.post('/api/voice/analyze', async (req: Request, res: Response) => {
+  try {
+    const { audioData, mimeType = 'audio/webm' } = req.body;
+    if (!audioData || typeof audioData !== 'string') {
+      return res.status(400).json({ error: 'audioData is required' });
+    }
+
+    const audioPart = {
+      inlineData: {
+        mimeType,
+        data: audioData,
+      },
+    };
+
+    const prompt = `أنت خبير هندسة صوتية وتوليد أصوات الذكاء الاصطناعي (Voice DNA & Audio Engineering).
+المطلوب منك تحليل هذا المقطع الصوتي بدقة متناهية وإرجاع استجابة JSON فقط بالتنسيق التالي:
+{
+  "transcription": "النص الدقيق المسموع في المقطع الصوتي بدون تحريف",
+  "gender": "ذكر / أنثى",
+  "estimatedAge": "عمر تقريبي مثل: ثلاثيني / أربعيني",
+  "dialect": "اللهجة بدقة مثل: مصرية قاهرية هادئة / فصحى معاصرة / خليجية",
+  "tone": "النبرة مثل: ودودة، استشارية، عميقة، موثوقة، هادئة",
+  "speed": "السرعة مثل: معتدلة 1.0x / سريعة / متأنية",
+  "energy": "مستوى الحماس والطاقة",
+  "geminiStylePrompt": "الوصف الأنسب لتمريره لنموذج الصوت مثل: Friendly, warm, confident Egyptian consultant tone",
+  "summary": "ملخص شامل لطبيعة الصوت وإمكانية اعتماده كصوت لمعين"
+}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: {
+        parts: [
+          audioPart,
+          { text: prompt },
+        ],
+      },
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const resultText = response.text?.trim() || '{}';
+    try {
+      const parsed = JSON.parse(resultText);
+      res.json(parsed);
+    } catch {
+      res.json({ rawAnalysis: resultText });
+    }
+  } catch (err: any) {
+    console.warn('Voice analysis notice:', err?.message || err);
+    res.status(500).json({
+      error: 'Voice analysis failed',
+      details: err?.message || String(err),
+    });
+  }
+});
+
+/**
+ * =========================================================================
+ * Dynamic Reference Voice TTS with Hugging Face Gradio / Custom Server
+ * =========================================================================
+ * Supports:
+ *   1. Dynamic in-app recorded reference voice blobs (via multipart/form-data)
+ *   2. Hugging Face Gradio Spaces via @gradio/client SDK (/predict)
+ *   3. Direct multipart/form-data POST endpoints
+ * =========================================================================
+ */
+async function synthesizeWithGradioOrCustomServer(
+  text: string,
+  audioBuffer: Buffer,
+  audioMime: string = 'audio/wav'
+): Promise<{ audioData: string; mimeType: string }> {
+  const customTtsUrl =
+    process.env.CUSTOM_TTS_API_URL && !process.env.CUSTOM_TTS_API_URL.includes('localhost:8000')
+      ? process.env.CUSTOM_TTS_API_URL
+      : 'https://mrfakename-e2-f5-tts.hf.space';
+
+  const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: audioMime });
+
+  // 1. Try Hugging Face Gradio client if it matches HF Space or Gradio URL
+  const isGradioUrl =
+    customTtsUrl.includes('hf.space') ||
+    customTtsUrl.includes('huggingface.co') ||
+    customTtsUrl.includes(':7860') ||
+    !customTtsUrl.startsWith('http');
+
+  if (isGradioUrl) {
+    try {
+      const hfToken = process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN;
+      const client = await Client.connect(customTtsUrl, hfToken ? { hf_token: hfToken as `hf_${string}` } : undefined);
+      let result: any = null;
+
+      try {
+        result = await client.predict('/predict', {
+          ref_audio: audioBlob,
+          ref_text: '',
+          gen_text: text,
+          remove_silence: false,
+        });
+      } catch (paramErr) {
+        // Fallback to array parameters
+        result = await client.predict('/predict', [audioBlob, '', text, false]);
+      }
+
+      if (result && result.data) {
+        const audioItem = Array.isArray(result.data) ? result.data[0] : result.data;
+        if (audioItem && typeof audioItem === 'object' && audioItem.url) {
+          const res = await fetch(audioItem.url);
+          const buf = await res.arrayBuffer();
+          return {
+            audioData: Buffer.from(buf).toString('base64'),
+            mimeType: 'audio/wav',
+          };
+        }
+        if (typeof audioItem === 'string' && audioItem.startsWith('data:')) {
+          const base64Part = audioItem.split(',')[1] || '';
+          return {
+            audioData: base64Part,
+            mimeType: 'audio/wav',
+          };
+        }
+      }
+    } catch (gradioErr: any) {
+      const errMsg = String(gradioErr?.message || gradioErr);
+      console.warn('Gradio Client SDK call notice:', errMsg);
+      throw new Error(`Hugging Face Gradio Space (${customTtsUrl}): ${errMsg}`);
+    }
+  }
+
+  // 2. Direct multipart/form-data POST request
+  const formData = new FormData();
+  formData.append('text', text);
+  formData.append('gen_text', text);
+  formData.append('ref_text', '');
+  formData.append('remove_silence', 'false');
+  formData.append('reference_audio', audioBlob, 'reference_voice.wav');
+  formData.append('ref_audio', audioBlob, 'reference_voice.wav');
+
+  const response = await fetch(customTtsUrl, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`TTS server returned status ${response.status}: ${errorText}`);
+  }
+
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const json = await response.json();
+    if (json.audioData || json.audio_base64 || json.audio) {
+      return {
+        audioData: json.audioData || json.audio_base64 || json.audio,
+        mimeType: json.mimeType || 'audio/wav',
+      };
+    }
+    if (json.url) {
+      const res = await fetch(json.url);
+      const buf = await res.arrayBuffer();
+      return {
+        audioData: Buffer.from(buf).toString('base64'),
+        mimeType: 'audio/wav',
+      };
+    }
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const base64Audio = Buffer.from(arrayBuffer).toString('base64');
+
+  return {
+    audioData: base64Audio,
+    mimeType: 'audio/wav',
+  };
+}
+
+// 5. Custom Server Voice Cloning TTS API Endpoint (Accepts dynamic multipart/form-data or JSON)
+app.post('/api/custom-tts', upload.single('reference_audio'), async (req: Request, res: Response) => {
+  try {
+    const text = req.body.text;
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'text is required' });
+    }
+
+    let audioBuffer: Buffer | null = null;
+    let audioMime = 'audio/wav';
+
+    // 1. Dynamic in-app recorded audio sent via multipart file
+    if (req.file && req.file.buffer) {
+      audioBuffer = req.file.buffer;
+      audioMime = req.file.mimetype || 'audio/wav';
+    } else if (req.body.audioData) {
+      // 2. Base64 audio passed in JSON
+      audioBuffer = Buffer.from(req.body.audioData, 'base64');
+      audioMime = req.body.mimeType || 'audio/wav';
+    } else {
+      // 3. Fallback to local audio asset file if exists
+      const referenceAudioPath = path.join(__dirname, 'public', 'assets', 'my_voice_sample.wav');
+      if (fs.existsSync(referenceAudioPath)) {
+        audioBuffer = fs.readFileSync(referenceAudioPath);
+      }
+    }
+
+    if (!audioBuffer) {
+      return res.status(400).json({
+        error: 'يرجى تسجيل بصمة الصوت المرجعية بالمايكروفون أولاً (No reference audio provided).',
+      });
+    }
+
+    try {
+      const result = await synthesizeWithGradioOrCustomServer(text.trim(), audioBuffer, audioMime);
+      return res.json(result);
+    } catch (gradioErr: any) {
+      const errorMessage = gradioErr?.message || String(gradioErr);
+      console.warn('Gradio cloning server notice:', errorMessage);
+      return res.status(500).json({
+        error: 'Custom TTS synthesis failed',
+        details: errorMessage,
+      });
+    }
+  } catch (err: any) {
+    const errorMsg = err?.message || String(err);
+    console.warn('Custom TTS server error:', errorMsg);
+    res.status(500).json({
+      error: 'Custom TTS synthesis failed',
+      details: errorMsg,
+    });
+  }
+});
+
+// Aliases for backward-compatibility routing
+app.post(['/api/voice/elevenlabs-tts', '/api/voice/fishaudio-tts'], upload.single('reference_audio'), async (req: Request, res: Response) => {
+  try {
+    const text = req.body.text;
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'text is required' });
+    }
+
+    let audioBuffer: Buffer | null = null;
+    let audioMime = 'audio/wav';
+
+    if (req.file && req.file.buffer) {
+      audioBuffer = req.file.buffer;
+      audioMime = req.file.mimetype || 'audio/wav';
+    } else {
+      const referenceAudioPath = path.join(__dirname, 'public', 'assets', 'my_voice_sample.wav');
+      if (fs.existsSync(referenceAudioPath)) {
+        audioBuffer = fs.readFileSync(referenceAudioPath);
+      }
+    }
+
+    if (!audioBuffer) {
+      return res.status(400).json({ error: 'No reference audio provided' });
+    }
+
+    const result = await synthesizeWithGradioOrCustomServer(text.trim(), audioBuffer, audioMime);
+    res.json(result);
+  } catch (err: any) {
+    console.warn('Custom TTS alias notice:', err?.message || err);
+    res.status(500).json({
+      error: 'Custom TTS synthesis failed',
+      details: err?.message || String(err),
+      fallback: true,
     });
   }
 });
@@ -447,43 +815,43 @@ app.get('/embed/widget.js', (req: Request, res: Response) => {
       position: fixed;
       bottom: 24px;
       \${position === 'bottom-right' ? 'right: 24px;' : 'left: 24px;'}
-      width: 60px;
-      height: 60px;
+      width: 62px;
+      height: 62px;
       border-radius: 50%;
       background: linear-gradient(135deg, \${primaryColor}, #0284c7);
-      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4), 0 0 15px rgba(16,185,129,0.3);
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5), 0 0 20px rgba(16,185,129,0.4);
       cursor: pointer;
       z-index: 999999;
       display: flex;
       align-items: center;
       justify-content: center;
-      border: 2px solid rgba(255,255,255,0.2);
+      border: 2.5px solid rgba(255,255,255,0.3);
       transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
     .ezouti-widget-fab:hover {
-      transform: scale(1.08) translateY(-2px);
-      box-shadow: 0 14px 28px -4px rgba(0,0,0,0.45), 0 0 25px rgba(16,185,129,0.5);
+      transform: scale(1.1) translateY(-2px);
+      box-shadow: 0 14px 28px -4px rgba(0,0,0,0.5), 0 0 28px rgba(16,185,129,0.6);
     }
     .ezouti-widget-fab svg {
-      width: 30px;
-      height: 30px;
+      width: 32px;
+      height: 32px;
       fill: none;
       stroke: white;
-      stroke-width: 2;
+      stroke-width: 2.2;
     }
     .ezouti-widget-modal {
       display: none;
       position: fixed;
       bottom: 96px;
       \${position === 'bottom-right' ? 'right: 24px;' : 'left: 24px;'}
-      width: 420px;
-      max-width: calc(100vw - 48px);
-      height: 620px;
+      width: 380px;
+      max-width: calc(100vw - 32px);
+      height: 480px;
       max-height: calc(100vh - 120px);
-      background: #090d16;
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 20px;
-      box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
+      background: transparent;
+      border: none;
+      border-radius: 24px;
+      box-shadow: none;
       z-index: 999999;
       overflow: hidden;
       flex-direction: column;
@@ -492,10 +860,10 @@ app.get('/embed/widget.js', (req: Request, res: Response) => {
     }
     .ezouti-widget-modal.open {
       display: flex;
-      animation: ezoutiSlideUp 0.3s ease-out;
+      animation: ezoutiSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
     @keyframes ezoutiSlideUp {
-      from { opacity: 0; transform: translateY(15px) scale(0.96); }
+      from { opacity: 0; transform: translateY(20px) scale(0.95); }
       to { opacity: 1; transform: translateY(0) scale(1); }
     }
   \`;
@@ -504,14 +872,14 @@ app.get('/embed/widget.js', (req: Request, res: Response) => {
   // Create FAB
   var fab = document.createElement('div');
   fab.className = 'ezouti-widget-fab';
-  fab.title = 'مساعد عزوتي الذكي - وضاح & كابتن لوكا';
+  fab.title = 'مساعد عزوتي الصوتي الذكي (مُعِين)';
   fab.innerHTML = \`<svg viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z"/></svg>\`;
 
   // Create Modal IFrame
   var modal = document.createElement('div');
   modal.className = 'ezouti-widget-modal';
   modal.innerHTML = \`
-    <iframe src="\${baseUrl}/?embed=true&app=\${appId}" style="width:100%;height:100%;border:none;" allow="microphone"></iframe>
+    <iframe src="\${baseUrl}/?embed=true&app=\${appId}" style="width:100%;height:100%;border:none;background:transparent;" allow="microphone"></iframe>
   \`;
 
   document.body.appendChild(fab);

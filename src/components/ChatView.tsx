@@ -21,6 +21,7 @@ import {
   Play,
   Info,
   X,
+  AudioWaveform,
 } from 'lucide-react';
 
 interface ChatViewProps {
@@ -31,6 +32,7 @@ interface ChatViewProps {
   onSendMessage: (text: string) => void;
   isGenerating: boolean;
   onClearHistory: () => void;
+  onNavigateToVoiceStudio?: () => void;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -41,24 +43,32 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onSendMessage,
   isGenerating,
   onClearHistory,
+  onNavigateToVoiceStudio,
 }) => {
   const [inputText, setInputText] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
   const [currentEngine, setCurrentEngine] = useState<VoiceEngineType>('idle');
+  const [quotaInfo, setQuotaInfo] = useState(mueenAudio.getQuota());
   const [showVoiceInfoModal, setShowVoiceInfoModal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastSpokenMessageIdRef = useRef<string | null>(null);
 
-  // Subscribe to audio player changes
+  // Subscribe to audio player changes and quota updates
   useEffect(() => {
     const unsubscribe = mueenAudio.subscribe((isPlaying, activeId, engine) => {
       setPlayingMessageId(isPlaying ? activeId : null);
       setCurrentEngine(engine);
     });
+    const unsubQuota = mueenAudio.subscribeQuota((quota) => {
+      setQuotaInfo(quota);
+    });
+    mueenAudio.refreshQuota();
+
     return () => {
       unsubscribe();
+      unsubQuota();
       mueenAudio.stop();
     };
   }, []);
@@ -170,11 +180,23 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
         {/* Voice Toggles & Helpers */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Voice Quota Badge (10 requests limit as requested by user) */}
+          <div
+            className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-900 border border-emerald-500/40 text-slate-200 text-xs shadow-sm"
+            title="متبقي من الطلبات الصوتية اليومية المجانية المربوطة بـ 10 طلبات، مع التحويل لمايكروسوفت شاكر مجاناً وبدون انقطاع"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-bold text-emerald-400">صوت مصري:</span>
+            <span className="text-[11px] text-slate-300 font-mono font-bold">
+              {quotaInfo.remaining} / 10 طلبات اليوم
+            </span>
+          </div>
+
           {/* Voice Info Button */}
           <button
             onClick={() => setShowVoiceInfoModal(true)}
             className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition text-[11px]"
-            title="توضيح محرك الصوت البشري وحالة الكوتا"
+            title="توضيح نظام الصوت البشري المصري المجاني"
           >
             <Info className="w-3.5 h-3.5 text-cyan-400" />
             <span>نظام الصوت</span>
@@ -469,20 +491,23 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
                 <span className="text-amber-400 font-bold block">
-                  3. ما التحديثات التي قمنا بها لإبقاء الصوت بشرياً؟
+                  3. ما النظام الصوتي الجديد المعتمد الآن؟
                 </span>
-                <ul className="list-disc list-inside text-slate-400 space-y-1 pr-1">
+                <ul className="list-disc list-inside text-slate-400 space-y-1.5 pr-1">
                   <li>
-                    <strong className="text-slate-200">ذاكرة تخزين مؤقت (Cache):</strong> العبارات الشائعة والترحيبية تُحفظ بصوت مُعِين البشري ولا تستهلك أي رصيد عند إعادة سماعها.
+                    <strong className="text-emerald-300">الصوت البشري الذكي (10 طلبات مجانية يومياً):</strong> صوت استشاري مصري دافئ مخصص لهوية "مُعِين".
                   </li>
                   <li>
-                    <strong className="text-slate-200">محرك نطق عربي مطور (Neural Arabic):</strong> في حال انتهاء الحصة اليومية، يتم اختيار أنقى صوت عربي بشري طبيعي بالمتصفح بلهجة ونبرة هادئة وموزونة بدلاً من الروبوت.
+                    <strong className="text-cyan-300">أصوات مايكروسوفت المصرية البشرية (شاكر وسلمى):</strong> تعمل تلقائياً وبشكل مجاني وغير محدود 100% دون أي اشتراكات أو انقطاع عند استنفاد الرصيد اليومي.
+                  </li>
+                  <li>
+                    <strong className="text-amber-300">إلغاء الأصوات الروبوتية:</strong> لن تسمع أي صوت روبوتي آلي، فجميع الأصوات بشرية مصرية حقيقية.
                   </li>
                 </ul>
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-between">
+            <div className="pt-2 flex flex-wrap items-center justify-between gap-2">
               <button
                 onClick={() => {
                   handleTestVoice();

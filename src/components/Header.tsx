@@ -2,7 +2,7 @@ import React from 'react';
 import { PersonaMode, EzoutiApp } from '../types/assistant';
 import { EZOUTI_COMPANY_INFO } from '../data/ezoutiData';
 import { EzoutiLogo } from './EzoutiLogo';
-import { Sparkles, Briefcase, Cpu, Zap, Volume2, ShieldCheck } from 'lucide-react';
+import { Sparkles, Briefcase, Cpu, Zap, Volume2, ShieldCheck, AudioWaveform } from 'lucide-react';
 
 interface HeaderProps {
   selectedPersona: PersonaMode;
@@ -51,10 +51,10 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           
           {/* Logo & Assistant Identity */}
-          <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             {/* Official Ezouti Company Logo */}
             <div
-              className="cursor-pointer transition hover:opacity-90 flex items-center"
+              className="cursor-pointer transition hover:opacity-95 flex items-center"
               onClick={() => onSelectTab('chat')}
               title="شركة عزوتي للبرمجيات وتكنولوجيا المعلومات"
             >
@@ -62,24 +62,25 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Vertical Separator */}
-            <div className="h-8 w-px bg-slate-800 hidden sm:block" />
+            <div className="h-10 w-px bg-slate-800 hidden sm:block" />
 
             {/* Assistant Name: مُعِين */}
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-white tracking-wide flex items-center gap-1.5">
-                  <span className="text-emerald-400 font-black text-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-300 bg-clip-text text-transparent">
+                <h1 className="text-base font-bold text-white tracking-wide flex items-center gap-1.5">
+                  <span className="text-emerald-400 font-black text-xl sm:text-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-300 bg-clip-text text-transparent">
                     مُعِين
                   </span>
                   <span className="text-slate-500 font-normal text-xs">|</span>
-                  <span className="text-sm font-semibold text-slate-200">وضاح & كابتن لوكا</span>
+                  <span className="text-xs sm:text-sm font-semibold text-slate-200">المرشد الصوتي الذكي</span>
                 </h1>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                  لوكا السريع ⚡
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>صوت مصري بشري 🇪🇬</span>
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                المساعد الذكي مُعِين: عونك في البزنس، هندسة النظم المعقدة، والحلول السريعة
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                شرح واستخدام منصات وتطبيقات عزوتي صوتياً باللهجة المصرية خطوة بخطوة
               </p>
             </div>
           </div>
@@ -161,6 +162,12 @@ export const Header: React.FC<HeaderProps> = ({
               </select>
             </div>
 
+            {/* Natural Egyptian Voice Badge */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/40 text-emerald-300 text-xs font-bold shadow-sm">
+              <AudioWaveform className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+              <span>الصوت البشري المصري (نشط ومجاني)</span>
+            </div>
+
             {/* Voice Mode Toggle */}
             <button
               onClick={onToggleVoiceMode}
@@ -187,7 +194,7 @@ export const Header: React.FC<HeaderProps> = ({
                 : 'text-slate-400 hover:text-white hover:bg-slate-900'
             }`}
           >
-            🎙️ المساعد والمحادثة الصوتية
+            🎙️ المساعد والمحادثة الصوتية (مُعِين)
           </button>
 
           <button
